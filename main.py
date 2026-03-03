@@ -2,19 +2,21 @@ import os
 import sys
 import types
 
-# --- ANTI-CRASH PATCH ---
+# --- ANTI-CRASH PATCH (FIXED) ---
+# Humne '*' add kiya hai taaki ye function 1, 2 ya kitne bhi arguments accept kar sake
 if "pyrogram.sync" not in sys.modules:
     mock_sync = types.ModuleType("pyrogram.sync")
-    mock_sync.async_to_sync = lambda x: x
+    mock_sync.async_to_sync = lambda *args, **kwargs: args[0] if args else None
     mock_sync.idle = lambda: None
-    mock_sync.compose = lambda x: None
+    mock_sync.compose = lambda *args, **kwargs: None
     sys.modules["pyrogram.sync"] = mock_sync
-# ------------------------
+# -------------------------------
 
 import re
 import asyncio
 import requests
 import logging
+import pyrogram
 from pyrogram import Client, filters
 from pyromod import listen
 from pyrogram.types import Message
@@ -34,16 +36,21 @@ ORG_ID = "53796"
 
 @bot.on_message(filters.command(["start"]))
 async def start(bot, m: Message):
-    await m.reply_text("✅ **Bot is Active!**\nUse `/extract` to get content.")
+    await m.reply_text("✅ **Bot is now Online!**\nUse `/extract` to get your content.")
 
 @bot.on_message(filters.command(["extract"]))
 async def extract_batch(bot, m: Message):
     try:
         editable = await m.reply_text("🔑 **Logging in...**")
         
-        # Login Logic
+        # API Login
         url = "https://api.appx.co.in/v2/login"
-        payload = {"phone": "8279049568", "password": "8279049568", "orgId": ORG_ID, "deviceType": "android"}
+        payload = {
+            "phone": "8279049568", 
+            "password": "8279049568", 
+            "orgId": ORG_ID, 
+            "deviceType": "android"
+        }
         r = requests.post(url, json=payload).json()
         
         if not r.get("success"):
@@ -61,11 +68,15 @@ async def extract_batch(bot, m: Message):
         
         await editable.edit(listing)
 
+        # Asking for ID
         cid_msg = await bot.ask(m.chat.id, "🆔 **Send Course ID:**", timeout=120)
         cid = cid_msg.text.strip()
 
-        process_msg = await m.reply_text(f"⏳ **Extracting...**")
+        process_msg = await m.reply_text(f"⏳ **Extracting content...**")
         data_res = requests.get(f"https://api.appx.co.in/v2/get-course-content/{cid}", headers=headers).json()
+
+        if not data_res.get("data"):
+            return await process_msg.edit("❌ No content found for this ID.")
 
         file_name = f"{cid}_Content.txt"
         with open(file_name, "w", encoding="utf-8") as f:
@@ -75,18 +86,18 @@ async def extract_batch(bot, m: Message):
                 if url:
                     f.write(f"{title}: {url}\n")
 
-        await m.reply_document(file_name, caption=f"✅ Done for ID: `{cid}`")
+        await m.reply_document(file_name, caption=f"✅ **Extraction Complete**\n🆔 ID: `{cid}`")
         os.remove(file_name)
         await process_msg.delete()
 
     except Exception as e:
-        await m.reply_text(f"❌ **Error:** `{e}`")
+        logger.error(e)
+        await m.reply_text(f"❌ **Error:** `{str(e)}`")
 
 async def main():
-    await bot.start()
-    logger.info("Bot Started!")
-    await asyncio.Event().wait()
+    async with bot:
+        logger.info("Bot is Alive!")
+        await asyncio.Event().wait()
 
 if __name__ == "__main__":
     asyncio.run(main())
-        
