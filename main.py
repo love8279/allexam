@@ -1,15 +1,15 @@
 import os
 import sys
-
-# --- FORCED ASYNC PATCH ---
-# Pyromod ko sync dhundhne se rokne ke liye
 import types
-mock_sync = types.ModuleType("pyrogram.sync")
-mock_sync.async_to_sync = lambda x: x
-mock_sync.idle = lambda: None
-mock_sync.compose = lambda x: None
-sys.modules["pyrogram.sync"] = mock_sync
-# --------------------------
+
+# --- ANTI-CRASH PATCH ---
+if "pyrogram.sync" not in sys.modules:
+    mock_sync = types.ModuleType("pyrogram.sync")
+    mock_sync.async_to_sync = lambda x: x
+    mock_sync.idle = lambda: None
+    mock_sync.compose = lambda x: None
+    sys.modules["pyrogram.sync"] = mock_sync
+# ------------------------
 
 import re
 import asyncio
@@ -32,28 +32,24 @@ bot = Client(
 
 ORG_ID = "53796"
 
-def clean_filename(text):
-    return re.sub(r'[\\/*?:"<>|]', "", text).strip()
-
-async def get_token(phone, password):
-    url = "https://api.appx.co.in/v2/login"
-    payload = {"phone": phone, "password": password, "orgId": ORG_ID, "deviceType": "android"}
-    headers = {"Content-Type": "application/json"}
-    r = requests.post(url, json=payload, headers=headers)
-    if r.status_code == 200:
-        return r.json()["data"]["token"]
-    raise Exception("Login Failed! Credentials check karein.")
-
 @bot.on_message(filters.command(["start"]))
 async def start(bot, m: Message):
-    await m.reply_text("👋 **Hello!**\n\nAppx content extraction ke liye `/extract` use karein.")
+    await m.reply_text("✅ **Bot is Active!**\nUse `/extract` to get content.")
 
 @bot.on_message(filters.command(["extract"]))
 async def extract_batch(bot, m: Message):
     try:
         editable = await m.reply_text("🔑 **Logging in...**")
-        # Direct use of your credentials
-        token = await get_token("8279049568", "8279049568")
+        
+        # Login Logic
+        url = "https://api.appx.co.in/v2/login"
+        payload = {"phone": "8279049568", "password": "8279049568", "orgId": ORG_ID, "deviceType": "android"}
+        r = requests.post(url, json=payload).json()
+        
+        if not r.get("success"):
+            return await editable.edit(f"❌ Login Failed: {r.get('message')}")
+            
+        token = r["data"]["token"]
         headers = {"token": token}
 
         await editable.edit("📚 **Fetching Courses...**")
@@ -65,24 +61,21 @@ async def extract_batch(bot, m: Message):
         
         await editable.edit(listing)
 
-        cid_msg = await bot.ask(m.chat.id, "🆔 **Enter Course ID:**", timeout=120)
+        cid_msg = await bot.ask(m.chat.id, "🆔 **Send Course ID:**", timeout=120)
         cid = cid_msg.text.strip()
 
         process_msg = await m.reply_text(f"⏳ **Extracting...**")
         data_res = requests.get(f"https://api.appx.co.in/v2/get-course-content/{cid}", headers=headers).json()
 
-        if not data_res.get("data"):
-            return await process_msg.edit("❌ No content found.")
-
         file_name = f"{cid}_Content.txt"
         with open(file_name, "w", encoding="utf-8") as f:
-            for item in data_res["data"]:
+            for item in data_res.get("data", []):
                 title = item.get("title", "Untitled")
                 url = item.get("videoUrl") or item.get("pdfUrl") or item.get("vimeoUrl")
                 if url:
                     f.write(f"{title}: {url}\n")
 
-        await m.reply_document(file_name, caption=f"✅ **Extracted Successfully!**\n🆔 ID: `{cid}`")
+        await m.reply_document(file_name, caption=f"✅ Done for ID: `{cid}`")
         os.remove(file_name)
         await process_msg.delete()
 
@@ -91,9 +84,9 @@ async def extract_batch(bot, m: Message):
 
 async def main():
     await bot.start()
-    logger.info("Bot is running!")
+    logger.info("Bot Started!")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
+        
