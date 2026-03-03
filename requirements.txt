@@ -1,5 +1,6 @@
 pyrogram
 tgcrypto
-pyromod
+pyromod==2.1.2
 requests
 asyncio
+
